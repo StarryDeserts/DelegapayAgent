@@ -8,3 +8,14 @@ coverage/
 !.env.example
 *.log
 .DS_Store
+.agents/
+skill-lock.json
+skills-lock.json
+
+# next.js / vercel / typescript
+/out/
+*.tsbuildinfo
+next-env.d.ts
+.vercel
+*.pem
+.pnpm-debug.log*

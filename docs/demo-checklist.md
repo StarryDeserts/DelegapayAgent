@@ -3,6 +3,8 @@
 A pre-demo checklist for running DelegaPay end to end, plus the regression
 harnesses. Read this top to bottom before a live demo.
 
+For the final recording script, see [`docs/demo-video-plan.md`](./demo-video-plan.md).
+
 DelegaPay lets a user grant an AI agent a bounded USDC budget, has an AI planner
 produce a validated mission plan, optionally buys a **simulated** x402 risk score
 before any funds move, and then executes a delegated USDC transfer on **Base

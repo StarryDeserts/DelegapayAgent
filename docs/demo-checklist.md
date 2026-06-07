@@ -3,7 +3,11 @@
 A pre-demo checklist for running DelegaPay end to end, plus the regression
 harnesses. Read this top to bottom before a live demo.
 
-For the final recording script, see [`docs/demo-video-plan.md`](./demo-video-plan.md).
+Companion docs:
+
+- [`README.md`](../README.md) — project overview for judges, sponsor reviewers, and developers.
+- [`docs/demo-video-plan.md`](./demo-video-plan.md) — final recording script and narration plan.
+- [`docs/vercel-deployment-plan.md`](./vercel-deployment-plan.md) — deployment checklist and Vercel safety plan.
 
 DelegaPay lets a user grant an AI agent a bounded USDC budget, has an AI planner
 produce a validated mission plan, optionally buys a **simulated** x402 risk score

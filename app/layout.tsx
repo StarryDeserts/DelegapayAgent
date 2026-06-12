@@ -4,6 +4,9 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "DelegaPay Agent",
   description: "Grant an AI agent a bounded USDC budget on Base Sepolia and watch every delegated step.",
+  icons: {
+    icon: "/logo.svg",
+  },
 };
 
 export default function RootLayout({

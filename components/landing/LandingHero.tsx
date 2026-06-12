@@ -1,3 +1,4 @@
+import Image from 'next/image'
 import Link from 'next/link'
 import { BoundedBudgetField } from './BoundedBudgetField'
 
@@ -9,7 +10,8 @@ export function LandingHero() {
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_35%_15%,var(--dp-glow-field),transparent_32%),radial-gradient(circle_at_88%_40%,var(--dp-glow-cyan),transparent_26%),linear-gradient(180deg,var(--dp-bg)_0%,#07100d_58%,var(--dp-bg)_100%)]" />
       <div className="relative z-10 mx-auto flex min-h-[calc(100vh-3rem)] max-w-[1440px] flex-col gap-8">
         <nav className="flex items-center justify-between gap-4 border-b border-white/10 pb-4 font-mono text-[13px] text-zinc-400">
-          <Link href="/" className="font-semibold tracking-[0.2em] text-emerald-200 focus:outline-none focus:ring-2 focus:ring-emerald-300">
+          <Link href="/" className="flex items-center gap-2 font-semibold tracking-[0.2em] text-emerald-200 focus:outline-none focus:ring-2 focus:ring-emerald-300">
+            <Image src="/logo.png" alt="DelegaPay logo" width={32} height={32} priority className="h-8 w-8 object-contain" />
             DELEGAPAY
           </Link>
           <div className="hidden items-center gap-5 lg:flex">

@@ -19,3 +19,4 @@ next-env.d.ts
 .vercel
 *.pem
 .pnpm-debug.log*
+2026-06-06-session-progress.txt

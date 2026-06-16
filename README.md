@@ -26,6 +26,53 @@ The agent can draft a payment plan, but it cannot directly move funds. The user 
 
 The current provider selection is explicit and honest: `AI_PROVIDER` can force `mock`, `deepseek`, `venice`, or `openai-compatible`. If no provider is forced, configured keys are checked and the deterministic mock planner is used when no key is present.
 
+The sections below are the code-grounded sponsor usage map: every feature links to the exact file and lines where it is implemented, and each "(if using)" capability is honestly labelled real, simulated, or not used.
+
+## Smart Accounts Kit Usage
+
+DelegaPay uses `@metamask/smart-accounts-kit` (1.6.0) for two distinct, real signing paths on Base Sepolia. All wallet/kit code is isolated under `lib/metamask/*`, behind a narrow client interface so the rest of the app never touches `window.ethereum` or a key.
+
+### Advanced Permissions
+
+EIP-7715 is the **primary** custody path: the user's own MetaMask grants a bounded USDC permission (one-off allowance or recurring period), and a keyless relayer redeems it — the server never reads a private key.
+
+- **Requesting the permission** — [`lib/metamask/permissions.ts` → `grant()` calling `requestExecutionPermissions`](https://github.com/StarryDeserts/DelegapayAgent/blob/main/lib/metamask/permissions.ts#L175-L200), with the per-type permission payload built in [`buildPermission()`](https://github.com/StarryDeserts/DelegapayAgent/blob/main/lib/metamask/permissions.ts#L97-L121).
+- **Redeeming the permission** — [`lib/metamask/relayGranted.ts` → `relayGrantedMission()`](https://github.com/StarryDeserts/DelegapayAgent/blob/main/lib/metamask/relayGranted.ts#L83-L211) (keyless; the delegation was signed in the browser), exposed at [`app/api/mission/relay/route.ts`](https://github.com/StarryDeserts/DelegapayAgent/blob/main/app/api/mission/relay/route.ts#L14-L34).
+
+### Delegations
+
+ERC-7710 is the **fallback** path: a server-held throwaway testnet key creates and signs a root delegation, then the same relayer redeems it. Used only as a controlled Base Sepolia fallback when the wallet does not support EIP-7715.
+
+- **Creating the delegation** — [`lib/metamask/delegation.ts` → `buildSignedDelegation()`](https://github.com/StarryDeserts/DelegapayAgent/blob/main/lib/metamask/delegation.ts#L44-L77) (`createDelegation` + `smartAccount.signDelegation`).
+- **Redeeming the delegation** — [`lib/metamask/execute.ts` → `executeMission()`](https://github.com/StarryDeserts/DelegapayAgent/blob/main/lib/metamask/execute.ts#L112-L249) and the shared [`relayBundle()`](https://github.com/StarryDeserts/DelegapayAgent/blob/main/lib/metamask/execute.ts#L284-L345) transport tail, exposed at [`app/api/mission/execute/route.ts`](https://github.com/StarryDeserts/DelegapayAgent/blob/main/app/api/mission/execute/route.ts#L13-L33).
+
+### Redelegation
+
+**Not used.** DelegaPay only issues **root** delegations (a single delegator to the relayer's `targetAddress`); every redeemed `permissionContext` is a length-1 chain, never a re-delegated one. The length-1 invariant is enforced in [`RelayGrantedInputSchema`](https://github.com/StarryDeserts/DelegapayAgent/blob/main/lib/metamask/relayGranted.ts#L64-L79) and documented on the [`Delegation7710` wire type](https://github.com/StarryDeserts/DelegapayAgent/blob/main/lib/relayer/transaction.ts#L30-L34). A delegate-of-a-delegate (redelegation) chain is out of scope for this MVP.
+
+### x402
+
+The premium risk-score route speaks the x402 handshake with `assetTransferMethod: "erc7710"`. **This leg is simulated by design** — the 402 challenge/signature/unlock and the budget binding are real and gate Broadcast, but the payment is never settled on-chain (synthetic, reserved addresses; `simulated: true`).
+
+- **x402 on the server** — [`app/api/premium/route.ts` → `POST()`](https://github.com/StarryDeserts/DelegapayAgent/blob/main/app/api/premium/route.ts#L14-L35), backed by [`lib/x402/premium.ts` → `runPremiumRoute()`](https://github.com/StarryDeserts/DelegapayAgent/blob/main/lib/x402/premium.ts#L97-L118).
+- **x402-to-ERC-7710 asset transfer on the client** — [`lib/x402/client.ts` → `requestPremium()`](https://github.com/StarryDeserts/DelegapayAgent/blob/main/lib/x402/client.ts#L48-L133); the simulated ERC-7710 permission context (distinct from any live relayer target) is built at [lines 86-96](https://github.com/StarryDeserts/DelegapayAgent/blob/main/lib/x402/client.ts#L86-L96), and the `erc7710` method constant plus the "never settled on-chain" note live in [`lib/x402/challenge.ts`](https://github.com/StarryDeserts/DelegapayAgent/blob/main/lib/x402/challenge.ts#L12-L20).
+
+## 1Shot API Usage
+
+The 1Shot public relayer (keyless JSON-RPC; clients pay per transaction in on-chain ERC-20) redeems both signing paths above. No API key, no Bearer token; the delegate address is discovered, never hardcoded.
+
+- **Transport and endpoints** — [`lib/relayer/client.ts`](https://github.com/StarryDeserts/DelegapayAgent/blob/main/lib/relayer/client.ts#L8-L21) (`RELAYER_URLS`, testnet/mainnet switch) and the single [`relayerRpc()`](https://github.com/StarryDeserts/DelegapayAgent/blob/main/lib/relayer/client.ts#L47-L63) JSON-RPC 2.0 call.
+- **Capability discovery** — [`lib/relayer/capabilities.ts` → `getCapabilities()`](https://github.com/StarryDeserts/DelegapayAgent/blob/main/lib/relayer/capabilities.ts#L26-L33) (`relayer_getCapabilities` returns `feeCollector`, `targetAddress`, and accepted tokens), proxied same-origin at [`app/api/relayer/capabilities/route.ts`](https://github.com/StarryDeserts/DelegapayAgent/blob/main/app/api/relayer/capabilities/route.ts#L11-L26).
+- **Submitting a delegated bundle** — [`lib/relayer/transaction.ts` → `send7710Transaction()`](https://github.com/StarryDeserts/DelegapayAgent/blob/main/lib/relayer/transaction.ts#L70-L76) (`relayer_send7710Transaction`); estimate-first then explicit broadcast is orchestrated in [`relayBundle()`](https://github.com/StarryDeserts/DelegapayAgent/blob/main/lib/metamask/execute.ts#L284-L345).
+
+## Venice AI Usage
+
+**Optional provider.** Venice is wired through DelegaPay's generic OpenAI-compatible planner; the **default** provider is DeepSeek, with a deterministic mock fallback when no key is set. All AI output is treated as a *proposal* and validated against a zod `MissionPlanSchema` before any permission or transfer can happen.
+
+- **Venice provider** — [`lib/ai/providers/venice.ts` → `createVenicePlanner()`](https://github.com/StarryDeserts/DelegapayAgent/blob/main/lib/ai/providers/venice.ts#L11-L26) (base URL `https://api.venice.ai/api/v1`; `VENICE_MODEL` is required, which is why Venice is optional rather than the default).
+- **Provider selection** — [`lib/ai/index.ts` → `selectProvider()`](https://github.com/StarryDeserts/DelegapayAgent/blob/main/lib/ai/index.ts#L16-L30) (`AI_PROVIDER=venice` forces it; otherwise the first configured key wins).
+- **Plan contract and prompts** — [`lib/ai/planner.ts`](https://github.com/StarryDeserts/DelegapayAgent/blob/main/lib/ai/planner.ts#L14-L48) (`buildSystemPrompt`, plus the zod `parseMissionPlan` gate every provider's output must pass).
+
 ## Demo flow
 
 The judge-facing flow is split into three routes:
@@ -202,6 +249,18 @@ The app uses system font stacks, so `pnpm build` no longer depends on fetching G
 - Server-key fallback requires `PRIVATE_KEY`, `OWNER`, and `RPC_URL`; use only a throwaway testnet key.
 - Harness browser resolution depends on the local Playwright/Chromium setup documented in `docs/demo-checklist.md`.
 - The public proof hash is a previously verified transaction for the demo narrative; a new live broadcast should be approved and recorded separately.
+
+## Feedback
+
+Detailed, code-grounded sponsor feedback is in [`docs/submission/sponsor-feedback.md`](docs/submission/sponsor-feedback.md). Every friction point cites the real file where we hit it, so the feedback is specific and verifiable rather than generic.
+
+- **MetaMask / Smart Accounts Kit** — `getSupportedExecutionPermissions()` throws on non-Flask/older MetaMask instead of reporting "unsupported"; discriminated-union scope widening forces per-branch call-site duplication; the kit `Delegation` vs ERC-7710 wire type needs an `as unknown as` cast; the immutable signed allowance vs. an after-the-fact relayer fee is the sharpest design tax; EIP-7702 authorization plumbing is under-documented.
+- **1Shot** — inconsistent JSON-RPC param shapes (positional array vs. single object); `decimals` arrives as `number | string`; the "delegate must equal `targetAddress`" rule is invisible until it rejects you; two-phase fee discovery can force a re-sign; terminal status semantics had to be reverse-engineered.
+- **Venice** — no safe default model (so it became optional, not the default); the `"json"`-must-appear-in-prompt quirk cost a confusing 400; a 10-line quickstart would have made it the default provider.
+
+## Social Media
+
+A drafted X / Twitter thread is in [`docs/submission/x-thread.md`](docs/submission/x-thread.md). It tags **@MetaMaskDev** and showcases how Advanced Permissions streamline obtaining a bounded permission from the user (the EIP-7715 grant), ends on the public proof transaction `0x5b3deadb58a88343c8f3cbddf9c564cdc9d9eb9ebaf84bbddf7f383bd80997ab` on BaseScan, and is explicit that the x402 leg is simulated by design.
 
 ## Links
 
